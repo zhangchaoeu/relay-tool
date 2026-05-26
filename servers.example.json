@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:/agent_workspace"
+      ],
+      "cwd": "D:/agent_workspace",
+      "env": {},
+      "auto_start": true
+    }
+  ]
+}
