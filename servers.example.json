@@ -11,6 +11,24 @@
       "cwd": "D:/agent_workspace",
       "env": {},
       "auto_start": true
+    },
+    {
+      "name": "chrome-devtools",
+      "command": "chrome-devtools-mcp",
+      "args": [],
+      "cwd": null,
+      "env": {},
+      "auto_start": false
+    },
+    {
+      "name": "my-custom-mcp",
+      "command": "node",
+      "args": ["D:/my_scripts/custom_mcp_server.js"],
+      "cwd": "D:/my_scripts",
+      "env": {
+        "MY_API_KEY": "your-api-key-here"
+      },
+      "auto_start": false
     }
   ]
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
@@ -32,11 +33,15 @@ class StdioMCPClient:
 
     async def start(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        # Always inherit parent env so PATH (and global npm bin dir) is available.
+        # Any caller-supplied env vars are merged on top of the inherited env.
+        merged_env = os.environ.copy()
+        merged_env.update(self.env)
         self.process = await asyncio.create_subprocess_exec(
             self.command,
             *self.args,
             cwd=self.cwd,
-            env=self.env or None,
+            env=merged_env,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

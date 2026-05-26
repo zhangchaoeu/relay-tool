@@ -20,6 +20,7 @@ class TaskDispatcher:
             "powershell.safe": powershell.run_safe,
             "mcp.install": mcp.install,
             "mcp.register": mcp.register,
+            "mcp.unregister": mcp.unregister,
             "mcp.start": mcp.start,
             "mcp.stop": mcp.stop,
             "mcp.restart": mcp.restart,
