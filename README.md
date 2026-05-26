@@ -444,7 +444,7 @@ await tools.windows_mcp_register(
     command="node",
     args=["D:/my_scripts/custom_mcp_server.js"],
     cwd="D:/my_scripts",
-    env={"MY_API_KEY": "secret"},  # 仅追加，不替换 PATH
+    env={"MY_API_KEY": "your-api-key-here"},  # 仅追加，不替换 PATH
     auto_start=False,
 )
 await tools.windows_mcp_start("my-custom-mcp")
