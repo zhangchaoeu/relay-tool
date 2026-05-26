@@ -96,13 +96,15 @@ class AdminServer:
 
             response = await self._route(method, path, query, body)
             writer.write(response)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            # Catch any application-level error (parse/routing) and return 400.
+            # BaseException subclasses (KeyboardInterrupt, SystemExit) are not caught here.
             logger.debug("Admin request error from %s: %s", peer, exc)
             writer.write(_json_response("400 Bad Request", {"error": str(exc)}))
         finally:
             try:
                 await writer.drain()
-            except Exception:  # noqa: BLE001
+            except OSError:
                 pass
             writer.close()
 
