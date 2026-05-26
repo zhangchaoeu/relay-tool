@@ -5,20 +5,13 @@ import logging
 from typing import Any, Callable, Dict
 
 from hermes_relay.mcp.manager import MCPManager
-from hermes_relay.services.fs_service import FileService
-from hermes_relay.services.powershell_service import PowerShellService
 
 logger = logging.getLogger(__name__)
 
 
 class TaskDispatcher:
-    def __init__(self, fs: FileService, powershell: PowerShellService, mcp: MCPManager):
+    def __init__(self, mcp: MCPManager):
         self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {
-            "fs.list": fs.list_dir,
-            "fs.read": fs.read_file,
-            "fs.write": fs.write_file,
-            "powershell.safe": powershell.run_safe,
-            "mcp.install": mcp.install,
             "mcp.register": mcp.register,
             "mcp.unregister": mcp.unregister,
             "mcp.start": mcp.start,

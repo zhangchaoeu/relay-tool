@@ -24,12 +24,10 @@ class RelayConfig(BaseModel):
     heartbeat_interval_seconds: int = 10
     reconnect_interval_seconds: int = 5
     mcp_request_timeout_seconds: int = 30
-    allowed_file_roots: List[str] = Field(default_factory=list)
-    powershell_allowlist: List[str] = Field(default_factory=list)
-    allowed_npm_packages: List[str] = Field(default_factory=list)
-    allowed_pip_packages: List[str] = Field(default_factory=list)
     registry_file: str = "servers.json"
     log_dir: str = "logs"
+    admin_host: str = "127.0.0.1"
+    admin_port: int = 8766
 
 
 def load_config(path: str | Path) -> RelayConfig:

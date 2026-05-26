@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections import deque
 import json
 from pathlib import Path
@@ -34,38 +33,6 @@ class MCPManager:
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"servers": [s.model_dump() for s in servers.values()]}
         self.registry_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    async def install(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        ecosystem = payload.get("ecosystem")
-        package = payload.get("package")
-        version = payload.get("version")
-        if not ecosystem or not package:
-            raise ValueError("ecosystem and package are required")
-
-        if ecosystem == "npm":
-            if package not in self.config.allowed_npm_packages:
-                raise PermissionError("npm package is not allowlisted")
-            spec = f"{package}@{version}" if version else package
-            cmd = ["npm", "install", "-g", spec]
-        elif ecosystem == "pip":
-            if package not in self.config.allowed_pip_packages:
-                raise PermissionError("pip package is not allowlisted")
-            spec = f"{package}=={version}" if version else package
-            cmd = ["python", "-m", "pip", "install", spec]
-        else:
-            raise ValueError("Unsupported ecosystem")
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        return {
-            "exit_code": proc.returncode,
-            "stdout": stdout.decode("utf-8", errors="replace"),
-            "stderr": stderr.decode("utf-8", errors="replace"),
-        }
 
     async def unregister(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         name = payload["name"]
