@@ -1,0 +1,8 @@
+{
+  "host": "0.0.0.0",
+  "port": 8765,
+  "worker_agent_id": "windows-32",
+  "worker_token": "worker-auth-token",
+  "default_task_timeout_seconds": 30,
+  "heartbeat_timeout_seconds": 60
+}
