@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict
+
+from hermes_relay.mcp.manager import MCPManager
+from hermes_relay.services.fs_service import FileService
+from hermes_relay.services.powershell_service import PowerShellService
+
+
+class TaskDispatcher:
+    def __init__(self, fs: FileService, powershell: PowerShellService, mcp: MCPManager):
+        self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {
+            "fs.list": fs.list_dir,
+            "fs.read": fs.read_file,
+            "fs.write": fs.write_file,
+            "powershell.safe": powershell.run_safe,
+            "mcp.install": mcp.install,
+            "mcp.register": mcp.register,
+            "mcp.start": mcp.start,
+            "mcp.stop": mcp.stop,
+            "mcp.restart": mcp.restart,
+            "mcp.status": mcp.status,
+            "mcp.logs": mcp.logs,
+            "mcp.tools": mcp.tools,
+            "mcp.invoke": mcp.invoke,
+        }
+
+    @property
+    def capabilities(self) -> list[str]:
+        return list(self.handlers.keys())
+
+    async def dispatch(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task_id = task.get("task_id")
+        action = task.get("action")
+        payload = task.get("payload", {})
+
+        if action not in self.handlers:
+            return {
+                "type": "task_result",
+                "task_id": task_id,
+                "ok": False,
+                "data": None,
+                "error": f"Unsupported action: {action}",
+            }
+
+        try:
+            data = await self.handlers[action](payload)
+            return {
+                "type": "task_result",
+                "task_id": task_id,
+                "ok": True,
+                "data": data,
+                "error": None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "type": "task_result",
+                "task_id": task_id,
+                "ok": False,
+                "data": None,
+                "error": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
