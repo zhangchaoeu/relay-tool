@@ -132,7 +132,7 @@ class TestCallWorkerErrorResult(unittest.IsolatedAsyncioTestCase):
             )
 
         fake_conn.send = _send_error
-        with self.assertRaises(RuntimeError, msg="Task failed: File not found"):
+        with self.assertRaisesRegex(RuntimeError, "File not found"):
             await gw.call_worker("fs.read", {"path": "D:/missing.txt"})
 
 
