@@ -23,6 +23,7 @@ def ensure_path_allowed(path: str | Path, allowed_roots: list[Path]) -> Path:
     if not candidate.is_absolute():
         candidate = allowed_roots[0] / candidate
 
+    # strict=False is required so write targets that don't yet exist can still be validated safely.
     resolved = candidate.expanduser().resolve(strict=False)
     for root in allowed_roots:
         try:

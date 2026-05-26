@@ -33,7 +33,11 @@ class FileService:
         target = ensure_path_allowed(payload["path"], self.allowed_roots)
         if not target.exists():
             raise FileNotFoundError(str(target))
-        content = target.read_text(encoding=payload.get("encoding", "utf-8"))
+        encoding = payload.get("encoding", "utf-8")
+        try:
+            content = target.read_text(encoding=encoding)
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"Failed to decode file with encoding '{encoding}'") from exc
         return {"content": content}
 
     async def write_file(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,4 +46,4 @@ class FileService:
 
         content = payload.get("content", "")
         target.write_text(content, encoding=payload.get("encoding", "utf-8"))
-        return {"path": str(target), "bytes_written": len(content.encode(payload.get("encoding", "utf-8")))}
+        return {"path": str(target), "bytes_written": target.stat().st_size}

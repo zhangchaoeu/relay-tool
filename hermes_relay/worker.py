@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 import websockets
+from websockets.exceptions import WebSocketException
 
 from hermes_relay.config import RelayConfig
 from hermes_relay.dispatcher import TaskDispatcher
@@ -22,8 +23,8 @@ class WebSocketWorker:
         while True:
             try:
                 await self._run_session()
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("WebSocket session failed: %s", exc)
+            except (WebSocketException, OSError, json.JSONDecodeError):
+                logger.exception("WebSocket session failed")
             await asyncio.sleep(self.config.reconnect_interval_seconds)
 
     async def _run_session(self) -> None:

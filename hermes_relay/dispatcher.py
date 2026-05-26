@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any, Callable, Dict
 
 from hermes_relay.mcp.manager import MCPManager
 from hermes_relay.services.fs_service import FileService
 from hermes_relay.services.powershell_service import PowerShellService
+
+logger = logging.getLogger(__name__)
 
 
 class TaskDispatcher:
@@ -54,6 +57,7 @@ class TaskDispatcher:
                 "error": None,
             }
         except Exception as exc:  # noqa: BLE001
+            logger.exception("Task execution failed for action=%s task_id=%s", action, task_id)
             return {
                 "type": "task_result",
                 "task_id": task_id,

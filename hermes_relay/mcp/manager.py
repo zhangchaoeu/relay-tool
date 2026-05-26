@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -93,6 +94,7 @@ class MCPManager:
             cwd=cfg.cwd,
             env=cfg.env,
             log_dir=self.log_dir,
+            request_timeout_seconds=self.config.mcp_request_timeout_seconds,
         )
         await client.start()
         self._running[name] = client
@@ -138,25 +140,25 @@ class MCPManager:
         servers = []
         for server_name, cfg in registered.items():
             runtime = self._running.get(server_name)
-            proc_info: Dict[str, Any] | None = None
+            server_proc_info: Dict[str, Any] | None = None
             if runtime and runtime.process and runtime.process.pid:
                 try:
                     process = psutil.Process(runtime.process.pid)
                     with process.oneshot():
-                        proc_info = {
+                        server_proc_info = {
                             "pid": process.pid,
                             "status": process.status(),
                             "rss_bytes": process.memory_info().rss,
                         }
                 except psutil.Error:
-                    proc_info = None
+                    server_proc_info = None
             servers.append(
                 {
                     "name": server_name,
                     "registered": True,
                     "running": server_name in self._running,
                     "auto_start": cfg.auto_start,
-                    "process": proc_info,
+                    "process": server_proc_info,
                 }
             )
         return {"servers": servers}
@@ -170,8 +172,11 @@ class MCPManager:
             if not path.exists():
                 result[stream] = ""
                 continue
-            content = path.read_text(encoding="utf-8", errors="replace").splitlines()
-            result[stream] = "\n".join(content[-lines:])
+            tail = deque(maxlen=lines)
+            with path.open("r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    tail.append(line.rstrip("\n"))
+            result[stream] = "\n".join(tail)
         return result
 
     async def tools(self, payload: Dict[str, Any]) -> Dict[str, Any]:

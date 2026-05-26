@@ -2,6 +2,8 @@
 
 Hermes Relay 是运行在 **Windows 32 号机**上的远程 worker。它不是主聊天 Agent，而是通过 **反向 WebSocket 长连接**主动连接 33 号机，接收任务、执行并回传结果。
 
+> English: Hermes Relay is a Windows worker running on host 32. It actively dials host 33 via WebSocket, receives remote tasks, executes them locally, and sends task results back.
+
 ## 功能范围
 
 - WebSocket worker
@@ -82,6 +84,7 @@ cp config.example.json config.json
 - `worker_token`
 - `heartbeat_interval_seconds`
 - `reconnect_interval_seconds`
+- `mcp_request_timeout_seconds`
 - `allowed_file_roots`
 - `powershell_allowlist`
 - `allowed_npm_packages`

@@ -5,6 +5,7 @@
   "worker_token": "worker-auth-token",
   "heartbeat_interval_seconds": 15,
   "reconnect_interval_seconds": 5,
+  "mcp_request_timeout_seconds": 30,
   "allowed_file_roots": [
     "D:/agent_workspace",
     "D:/mcp_work"

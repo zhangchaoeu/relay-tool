@@ -33,3 +33,8 @@ class FileSecurityTests(unittest.IsolatedAsyncioTestCase):
         outside = self.root.parent / "outside.txt"
         with self.assertRaises(SecurityError):
             ensure_path_allowed(str(outside), self.allowed)
+
+    async def test_read_missing_file_raises(self) -> None:
+        missing = self.root / "missing.txt"
+        with self.assertRaises(FileNotFoundError):
+            await self.fs.read_file({"path": str(missing)})

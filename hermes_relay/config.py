@@ -23,6 +23,7 @@ class RelayConfig(BaseModel):
     worker_token: str
     heartbeat_interval_seconds: int = 10
     reconnect_interval_seconds: int = 5
+    mcp_request_timeout_seconds: int = 30
     allowed_file_roots: List[str] = Field(default_factory=list)
     powershell_allowlist: List[str] = Field(default_factory=list)
     allowed_npm_packages: List[str] = Field(default_factory=list)

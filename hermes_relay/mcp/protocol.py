@@ -22,6 +22,7 @@ class StdioMCPClient:
     cwd: str | None
     env: dict[str, str]
     log_dir: Path
+    request_timeout_seconds: int = 30
     process: asyncio.subprocess.Process | None = None
     _next_id: int = 1
     _pending: dict[int, asyncio.Future] = field(default_factory=dict)
@@ -82,7 +83,7 @@ class StdioMCPClient:
 
         msg = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
         await self._write_message(msg)
-        result = await asyncio.wait_for(future, timeout=30)
+        result = await asyncio.wait_for(future, timeout=self.request_timeout_seconds)
         if "error" in result and result["error"] is not None:
             raise MCPError(str(result["error"]))
         return result.get("result", {})
@@ -122,7 +123,11 @@ class StdioMCPClient:
                     return
                 if line in (b"\r\n", b"\n"):
                     break
-                key, value = line.decode("utf-8").split(":", 1)
+                decoded = line.decode("utf-8")
+                if ":" not in decoded:
+                    self._append_log("stderr", f"Malformed MCP header: {decoded.rstrip()}")
+                    continue
+                key, value = decoded.split(":", 1)
                 headers[key.strip().lower()] = value.strip()
 
             content_length = int(headers.get("content-length", "0"))
