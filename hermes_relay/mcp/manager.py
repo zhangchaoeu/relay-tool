@@ -67,6 +67,17 @@ class MCPManager:
             "stderr": stderr.decode("utf-8", errors="replace"),
         }
 
+    async def unregister(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        name = payload["name"]
+        if name in self._running:
+            await self.stop({"name": name})
+        servers = self.list_registered()
+        if name not in servers:
+            raise KeyError(f"MCP server not registered: {name}")
+        del servers[name]
+        self._save_registered(servers)
+        return {"unregistered": name}
+
     async def register(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             cfg = MCPServerConfig.model_validate(payload)
