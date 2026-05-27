@@ -1,14 +1,15 @@
 """MCP Server for Hermes Gateway.
 
-Exposes relay worker tools via the Model Context Protocol (JSON-RPC over SSE/HTTP)
-so that Hermes agents can load this as a standard MCP tool server.
+Exposes relay worker tools via the Model Context Protocol using the
+Streamable HTTP transport (JSON-RPC over HTTP POST/Response).
 
-Supports multiple simultaneous MCP client connections.
+Client POSTs JSON-RPC requests to a single URL and receives the JSON-RPC
+response directly in the HTTP response body. Supports multiple simultaneous
+MCP client connections (stateless per-request, with optional session tracking).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
@@ -198,145 +199,133 @@ def _make_error(request_id: Any, code: int, message: str, data: Any = None) -> d
     return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "error": error}
 
 
-class MCPSession:
-    """Represents a single MCP client session (SSE connection)."""
+async def _dispatch(gateway: Gateway, method: str | None, params: dict[str, Any]) -> Any:
+    """Dispatch a JSON-RPC method call and return the result."""
+    if method == "initialize":
+        return {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": SERVER_CAPABILITIES,
+            "serverInfo": SERVER_INFO,
+        }
+    elif method == "tools/list":
+        return {"tools": TOOL_DEFINITIONS}
+    elif method == "tools/call":
+        return await _call_tool(gateway, params)
+    elif method == "ping":
+        return {}
+    else:
+        raise ValueError(f"Unsupported method: {method}")
 
-    def __init__(self, session_id: str, gateway: Gateway) -> None:
-        self.session_id = session_id
-        self.gateway = gateway
-        self.initialized = False
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
 
-    def send_event(self, data: dict[str, Any]) -> None:
-        """Queue an SSE event for this session."""
-        self._queue.put_nowait(json.dumps(data, ensure_ascii=False))
+async def _call_tool(gateway: Gateway, params: dict[str, Any]) -> dict[str, Any]:
+    """Execute a tool call and return the MCP content response."""
+    tool_name = params.get("name")
+    arguments = params.get("arguments", {})
 
-    async def event_stream(self):
-        """Async generator yielding SSE-formatted events."""
-        while True:
-            data = await self._queue.get()
-            yield f"data: {data}\n\n"
+    if tool_name == "relay_mcp_invoke":
+        data = await gateway.call_worker(
+            "mcp.invoke",
+            {
+                "name": arguments["server"],
+                "tool_name": arguments["tool"],
+                "arguments": arguments.get("arguments", {}),
+            },
+        )
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-    async def handle_message(self, msg: dict[str, Any]) -> None:
-        """Process a JSON-RPC request from the MCP client."""
-        method = msg.get("method")
-        request_id = msg.get("id")
-        params = msg.get("params", {})
+    elif tool_name == "relay_mcp_tools":
+        data = await gateway.call_worker("mcp.tools", {"name": arguments["server"]})
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        # Notifications (no id) – just acknowledge
-        if request_id is None:
-            if method == "notifications/initialized":
-                logger.debug("Session %s: client sent initialized notification", self.session_id)
-            return
+    elif tool_name == "relay_mcp_start":
+        data = await gateway.call_worker("mcp.start", {"name": arguments["server"]})
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        try:
-            result = await self._dispatch(method, params)
-            self.send_event(_make_response(request_id, result))
-        except WorkerOfflineError as exc:
-            self.send_event(_make_error(request_id, -32000, str(exc)))
-        except TimeoutError as exc:
-            self.send_event(_make_error(request_id, -32000, str(exc)))
-        except Exception as exc:
-            logger.exception("Session %s: error handling method=%s", self.session_id, method)
-            self.send_event(_make_error(request_id, -32603, str(exc)))
+    elif tool_name == "relay_mcp_stop":
+        data = await gateway.call_worker("mcp.stop", {"name": arguments["server"]})
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-    async def _dispatch(self, method: str | None, params: dict[str, Any]) -> Any:
-        if method == "initialize":
-            self.initialized = True
-            return {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": SERVER_CAPABILITIES,
-                "serverInfo": SERVER_INFO,
-            }
-        elif method == "tools/list":
-            return {"tools": TOOL_DEFINITIONS}
-        elif method == "tools/call":
-            return await self._call_tool(params)
-        elif method == "ping":
-            return {}
-        else:
-            raise ValueError(f"Unsupported method: {method}")
+    elif tool_name == "relay_mcp_status":
+        payload: dict[str, Any] = {}
+        if "server" in arguments and arguments["server"]:
+            payload["name"] = arguments["server"]
+        data = await gateway.call_worker("mcp.status", payload)
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-    async def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
-        tool_name = params.get("name")
-        arguments = params.get("arguments", {})
+    elif tool_name == "relay_mcp_register":
+        payload = {
+            "name": arguments["name"],
+            "command": arguments["command"],
+            "args": arguments.get("args", []),
+            "env": arguments.get("env", {}),
+            "auto_start": arguments.get("auto_start", False),
+        }
+        if "cwd" in arguments and arguments["cwd"]:
+            payload["cwd"] = arguments["cwd"]
+        data = await gateway.call_worker("mcp.register", payload)
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        if tool_name == "relay_mcp_invoke":
-            data = await self.gateway.call_worker(
-                "mcp.invoke",
-                {
-                    "name": arguments["server"],
-                    "tool_name": arguments["tool"],
-                    "arguments": arguments.get("arguments", {}),
-                },
-            )
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
+    elif tool_name == "relay_mcp_unregister":
+        data = await gateway.call_worker("mcp.unregister", {"name": arguments["server"]})
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        elif tool_name == "relay_mcp_tools":
-            data = await self.gateway.call_worker("mcp.tools", {"name": arguments["server"]})
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
+    elif tool_name == "relay_mcp_logs":
+        data = await gateway.call_worker(
+            "mcp.logs",
+            {"name": arguments["server"], "lines": arguments.get("lines", 100)},
+        )
+        return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        elif tool_name == "relay_mcp_start":
-            data = await self.gateway.call_worker("mcp.start", {"name": arguments["server"]})
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
+    else:
+        raise ValueError(f"Unknown tool: {tool_name}")
 
-        elif tool_name == "relay_mcp_stop":
-            data = await self.gateway.call_worker("mcp.stop", {"name": arguments["server"]})
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
 
-        elif tool_name == "relay_mcp_status":
-            payload: dict[str, Any] = {}
-            if "server" in arguments and arguments["server"]:
-                payload["name"] = arguments["server"]
-            data = await self.gateway.call_worker("mcp.status", payload)
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
+async def _handle_jsonrpc_message(
+    gateway: Gateway, msg: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Process a single JSON-RPC message and return the response (or None for notifications)."""
+    method = msg.get("method")
+    request_id = msg.get("id")
+    params = msg.get("params", {})
 
-        elif tool_name == "relay_mcp_register":
-            payload = {
-                "name": arguments["name"],
-                "command": arguments["command"],
-                "args": arguments.get("args", []),
-                "env": arguments.get("env", {}),
-                "auto_start": arguments.get("auto_start", False),
-            }
-            if "cwd" in arguments and arguments["cwd"]:
-                payload["cwd"] = arguments["cwd"]
-            data = await self.gateway.call_worker("mcp.register", payload)
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
+    # Notifications (no id) – no response
+    if request_id is None:
+        if method == "notifications/initialized":
+            logger.debug("Client sent initialized notification")
+        return None
 
-        elif tool_name == "relay_mcp_unregister":
-            data = await self.gateway.call_worker("mcp.unregister", {"name": arguments["server"]})
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
-
-        elif tool_name == "relay_mcp_logs":
-            data = await self.gateway.call_worker(
-                "mcp.logs",
-                {"name": arguments["server"], "lines": arguments.get("lines", 100)},
-            )
-            return {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]}
-
-        else:
-            raise ValueError(f"Unknown tool: {tool_name}")
+    try:
+        result = await _dispatch(gateway, method, params)
+        return _make_response(request_id, result)
+    except WorkerOfflineError as exc:
+        return _make_error(request_id, -32000, str(exc))
+    except TimeoutError as exc:
+        return _make_error(request_id, -32000, str(exc))
+    except Exception as exc:
+        logger.exception("Error handling method=%s", method)
+        return _make_error(request_id, -32603, str(exc))
 
 
 class GatewayMCPServer:
-    """HTTP/SSE-based MCP server that supports multiple concurrent client sessions.
+    """Streamable HTTP MCP server that supports multiple concurrent clients.
 
-    Transport: Streamable HTTP (SSE for server->client, POST for client->server).
-    Each client gets a unique session via the SSE endpoint and sends requests via POST.
+    Transport: Streamable HTTP – client POSTs JSON-RPC to a single endpoint
+    and receives the JSON-RPC response in the HTTP response body.
+
+    Endpoint: POST /mcp
+    Optional session tracking via Mcp-Session-Id header.
     """
 
-    SSE_PATH = "/sse"
-    MESSAGES_PATH = "/messages"
+    MCP_PATH = "/mcp"
 
     def __init__(self, gateway: Gateway, host: str = "127.0.0.1", port: int = 8808) -> None:
         self.gateway = gateway
         self.host = host
         self.port = port
-        self._sessions: dict[str, MCPSession] = {}
         self._app = web.Application()
-        self._app.router.add_get(self.SSE_PATH, self._handle_sse)
-        self._app.router.add_post(self.MESSAGES_PATH, self._handle_messages)
+        self._app.router.add_post(self.MCP_PATH, self._handle_request)
+        self._app.router.add_get(self.MCP_PATH, self._handle_get)
+        self._app.router.add_delete(self.MCP_PATH, self._handle_delete)
 
     async def start(self) -> web.AppRunner:
         """Start the MCP HTTP server. Returns the runner for lifecycle management."""
@@ -344,65 +333,66 @@ class GatewayMCPServer:
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)
         await site.start()
-        logger.info("MCP server listening on http://%s:%d", self.host, self.port)
+        logger.info("MCP server (streamable-http) listening on http://%s:%d%s", self.host, self.port, self.MCP_PATH)
         return runner
 
-    async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
-        """SSE endpoint: establishes a new MCP session and streams events."""
-        session_id = str(uuid.uuid4())
-        session = MCPSession(session_id, self.gateway)
-        self._sessions[session_id] = session
-
-        response = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Session-Id": session_id,
-            },
-        )
-        await response.prepare(request)
-
-        # Send endpoint event so client knows where to POST
-        endpoint_event = f"event: endpoint\ndata: {self.MESSAGES_PATH}?session_id={session_id}\n\n"
-        await response.write(endpoint_event.encode("utf-8"))
-
-        logger.info("MCP session %s started", session_id)
-
-        try:
-            async for event_data in session.event_stream():
-                await response.write(event_data.encode("utf-8"))
-        except (asyncio.CancelledError, ConnectionResetError):
-            pass
-        finally:
-            self._sessions.pop(session_id, None)
-            logger.info("MCP session %s closed", session_id)
-
-        return response
-
-    async def _handle_messages(self, request: web.Request) -> web.Response:
-        """POST endpoint: receives JSON-RPC messages from MCP clients."""
-        session_id = request.query.get("session_id")
-        if not session_id or session_id not in self._sessions:
+    async def _handle_request(self, request: web.Request) -> web.Response:
+        """POST /mcp – handle JSON-RPC request and return response in body."""
+        # Validate content type
+        content_type = request.content_type
+        if content_type not in ("application/json",):
             return web.json_response(
-                {"error": "Invalid or missing session_id"},
+                _make_error(None, -32700, "Content-Type must be application/json"),
                 status=400,
             )
-
-        session = self._sessions[session_id]
 
         try:
             body = await request.json()
         except json.JSONDecodeError:
-            return web.json_response({"error": "Invalid JSON"}, status=400)
+            return web.json_response(
+                _make_error(None, -32700, "Parse error: invalid JSON"),
+                status=400,
+            )
 
-        # Handle batch or single message
+        # Generate or echo session id
+        session_id = request.headers.get("Mcp-Session-Id") or str(uuid.uuid4())
+
+        # Handle batch request
         if isinstance(body, list):
+            responses = []
             for msg in body:
-                await session.handle_message(msg)
-        else:
-            await session.handle_message(body)
+                resp = await _handle_jsonrpc_message(self.gateway, msg)
+                if resp is not None:
+                    responses.append(resp)
+            if not responses:
+                # All were notifications
+                return web.Response(
+                    status=202,
+                    headers={"Mcp-Session-Id": session_id},
+                )
+            return web.json_response(
+                responses,
+                headers={"Mcp-Session-Id": session_id},
+            )
 
-        return web.Response(status=202, text="Accepted")
+        # Single request
+        response = await _handle_jsonrpc_message(self.gateway, body)
+        if response is None:
+            # Notification – no response body
+            return web.Response(
+                status=202,
+                headers={"Mcp-Session-Id": session_id},
+            )
+
+        return web.json_response(
+            response,
+            headers={"Mcp-Session-Id": session_id},
+        )
+
+    async def _handle_get(self, request: web.Request) -> web.Response:
+        """GET /mcp – not used in stateless mode, return method not allowed."""
+        return web.Response(status=405, text="Method Not Allowed. Use POST.")
+
+    async def _handle_delete(self, request: web.Request) -> web.Response:
+        """DELETE /mcp – session termination (no-op in stateless mode)."""
+        return web.Response(status=200, text="OK")
