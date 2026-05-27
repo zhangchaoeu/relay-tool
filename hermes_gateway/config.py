@@ -13,6 +13,8 @@ class GatewayConfig(BaseModel):
     worker_token: str
     default_task_timeout_seconds: int = 30
     heartbeat_timeout_seconds: int = 60
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8808
 
 
 def load_config(path: str | Path) -> GatewayConfig:

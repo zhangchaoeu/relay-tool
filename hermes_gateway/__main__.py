@@ -6,6 +6,7 @@ import logging
 
 from hermes_gateway.config import load_config
 from hermes_gateway.gateway import Gateway
+from hermes_gateway.mcp_server import GatewayMCPServer
 from hermes_gateway.server import GatewayServer
 
 
@@ -26,7 +27,15 @@ async def _main() -> None:
 
     gateway = Gateway(config)
     server = GatewayServer(config, gateway)
-    await server.start()
+
+    # Start MCP server for Hermes agent access
+    mcp_server = GatewayMCPServer(gateway, host=config.mcp_host, port=config.mcp_port)
+    mcp_runner = await mcp_server.start()
+
+    try:
+        await server.start()
+    finally:
+        await mcp_runner.cleanup()
 
 
 if __name__ == "__main__":

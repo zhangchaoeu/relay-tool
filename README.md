@@ -35,7 +35,8 @@ hermes_gateway/
   state.py        # 单 worker 运行时状态
   gateway.py      # call_worker() 核心 + 消息处理
   server.py       # WebSocket 服务端（注册/心跳/分发）
-  tools.py        # Hermes 工具封装函数
+  tools.py        # Hermes 工具封装函数（Python 直接调用）
+  mcp_server.py   # MCP Server（SSE/HTTP），供 Hermes Agent 加载
 gateway_config.example.json
 ```
 
@@ -54,6 +55,8 @@ cp gateway_config.example.json gateway_config.json
 - `worker_token`：鉴权 token，必须与 Relay 端一致
 - `default_task_timeout_seconds`：任务默认超时（秒）
 - `heartbeat_timeout_seconds`：心跳超时（秒，供上层监控用）
+- `mcp_host`：MCP Server 监听地址（默认 `127.0.0.1`）
+- `mcp_port`：MCP Server 监听端口（默认 `8808`）
 
 ### 启动
 
@@ -86,6 +89,42 @@ await tools.relay_mcp_start("filesystem")
 await tools.relay_mcp_stop("filesystem")
 status = await tools.relay_mcp_status()
 ```
+
+### 通过 MCP Server 供 Hermes Agent 使用
+
+Gateway 同时暴露一个标准 MCP Server（SSE/HTTP 传输），Hermes Agent 可以像加载任何 MCP 工具一样加载它。
+
+**架构说明**：
+- Gateway 与 32 号机的 Relay 是**一对一**关系（单 WebSocket 连接）
+- MCP Server 支持**多个 Agent 同时连接**（每个 SSE 连接是独立 session）
+- 多个 Agent 的请求都通过同一个 Gateway 转发到 32 号机的 Relay
+
+**MCP Server 端点**：
+- SSE 连接：`GET http://{mcp_host}:{mcp_port}/sse`
+- 消息发送：`POST http://{mcp_host}:{mcp_port}/messages?session_id={id}`
+
+**Hermes Agent MCP 配置示例**（加入 agent 的 MCP server 列表）：
+
+```json
+{
+  "name": "relay-32",
+  "transport": "sse",
+  "url": "http://127.0.0.1:8808/sse"
+}
+```
+
+**可用工具**：
+
+| 工具名 | 说明 |
+|--------|------|
+| `relay_mcp_invoke` | 调用远程 MCP server 上的工具 |
+| `relay_mcp_tools` | 列出远程 MCP server 提供的工具 |
+| `relay_mcp_start` | 启动远程 MCP server |
+| `relay_mcp_stop` | 停止远程 MCP server |
+| `relay_mcp_status` | 查询远程 MCP server 状态 |
+| `relay_mcp_register` | 注册新 MCP server |
+| `relay_mcp_unregister` | 注销 MCP server |
+| `relay_mcp_logs` | 查看远程 MCP server 日志 |
 
 ### call_worker 错误处理
 

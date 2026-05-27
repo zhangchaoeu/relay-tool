@@ -4,5 +4,7 @@
   "worker_agent_id": "windows-32",
   "worker_token": "worker-auth-token",
   "default_task_timeout_seconds": 30,
-  "heartbeat_timeout_seconds": 60
+  "heartbeat_timeout_seconds": 60,
+  "mcp_host": "127.0.0.1",
+  "mcp_port": 8808
 }
